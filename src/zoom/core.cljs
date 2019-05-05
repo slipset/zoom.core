@@ -30,7 +30,6 @@
   (gdom/getElement "app"))
 
 (defn pan [dx dy matrix]
-  (js/console.log "panning" "dx" dx "dy" dy)
   (-> matrix
       (update 4 + dx)
       (update 5 + dy)))
@@ -62,13 +61,11 @@
   (if-let [[start-x start-y] (:panning @app-state)]
     (let [client-x (.-clientX e)
           client-y (.-clientY e)
-          bbox (.getBoundingClientRect (gdom/getElement "app"))]
-      (js/console.log "bbox" bbox)
-      (js/console.log "client-x" client-x "client-y" client-y)
+          svg (.getBoundingClientRect (gdom/getElement "svg"))]
       (swap! app-state
              (fn [s]
-               (let [x-world (.-width bbox)
-                     y-world (.-height bbox)
+               (let [x-world (.-width svg)
+                     y-world (.-height svg)
                      [_ _ x-view y-view] (:view-box s)]
                  (-> s
                      (assoc :panning [client-x client-y])
@@ -76,24 +73,30 @@
                                               (* (- client-x start-x)
                                                  (/ x-view x-world))
                                               (* (- client-y start-y)
-                                                 (/ y-view x-world)))))))))))
+                                                 (/ y-view y-world)))))))))))
 
 (defn handle-scroll [e]
   (swap! app-state
          (fn [s]
-           (let [bbox (.getBoundingClientRect (gdom/getElement "app"))
-                 [x-world y-world] (:world s)
+           (let [svg (.getBoundingClientRect (gdom/getElement "svg"))
+                 x-world (.-width svg)
+                 y-world (.-height svg)
                  [_ _ x-view y-view] (:view-box s)
                  client-x (.-clientX e)
                  client-y (.-clientY e)
                  zoom-step (if (< 0 (.-deltaY e)) 0.9 1.1)]
-             (console.log "foo" client-x client-y)
-             (assoc s :matrix (zoom [(* client-x
+             (console.log "client" client-x client-y)
+             (console.log "svg" x-world y-world)
+             (console.log "view" x-view y-view)
+             (console.log "correct" (/ client-x x-world))
+             (assoc s :matrix (zoom [(- client-x  x-view)
+                                     (* client-y (/ client-y y-world))]
+                               zoom-step  (:matrix s)))))))
+
+#_[(* client-x
                                         (/ x-view x-world))
                                      (* client-y
                                         (/ y-view x-world))]
-                               zoom-step  (:matrix s)))))))
-
 #_[(- client-x x-view)
                                      (- client-y y-view)]
 
@@ -110,8 +113,9 @@
     }
    [:h1 (:text @app-state)]
    [:h3 "Edit this in src/zoom/core.cljs and watch it lol"]
-   [:svg {:viewBox (str/join " "(:view-box @app-state))
-          :style #js {:border "1px solid red"}}
+   [:svg {:id "svg"
+          :viewBox (str/join " "(:view-box @app-state))
+          :style #js {:border "1px solid red" :width 400}}
     [:g {:id "matrix-group"
          :transform (str "matrix(" (str/join " " (:matrix @app-state)) ")")}
      [:path {:id "WA" :class "territory" :d "m 38.3, 168.2 c -1.9,-0.6 -3.6,-1.1 -3.8,-1.3 -0.2,-0.2 0.8,-2.5 2.25,-5.2 1.4,-2.7 2.6,-5.5 2.6,-6.2 0,-0.8 -1.8,-4.25 -4,-7.7 -2.2,-3.5 -4,-7.1 -4,-8.1 l 0,-1.8 -6.4,-10.3 -6.4,-10.3 1.8,0 -7,-14.8 0.2,-7.3 c 0.1,-4 0.1,-8.9 0.1,-10.9 l -0.1,-3.5 5.5,-6 c 3,-3.3 5.5,-6.3 5.5,-6.7 0,-0.4 0.9,-0.8 1.9,-0.8 l 1.9,0 9.8,-6.1 13.8,-2.2 4.1,-2.6 8.4,-15 -1.2,-3 3.3,-5 1.8,1.1 4,-2.5 0,-3.1 4.6,-4.3 8.5,0 3.4,3.8 c 1.9,2.1 3.4,4.3 3.4,5 l 0,1.3 2.5,-0.6 L 97.5,33.2 c 0,38.3 0,77 0,113.8 l -4.6,1.6 -4.5,2.2 -2.3,5.6 -1.6,0.5 c -0.9,0.3 -4.8,1 -8.6,1.6 l -7,1.1 -8.2,4.9 -8.2,4.9 -5.3,0 c -2.9,0 -6.9,-0.5 -8.8,-1.1 z"}]
