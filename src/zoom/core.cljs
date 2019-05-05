@@ -18,7 +18,9 @@
 (defonce app-state
   (atom {:text "Hello world!"
          :matrix [1 0 0 1 0 0]
-         :view-box [0 0 250 150]}))
+         :view-box [0 0 250 150]
+         :world [800 500]}
+        ))
 
 (defn center [view-box]
   [(/ (nth view-box 2) 2)
@@ -28,17 +30,14 @@
   (gdom/getElement "app"))
 
 (defn pan [dx dy matrix]
-  (js/console.log "panning" dx dy)
+  (js/console.log "panning" "dx" dx "dy" dy)
   (-> matrix
       (update 4 + dx)
       (update 5 + dy)))
 
-;; transformMatrix[4] += (1 - scale) * centerX;
-;;transformMatrix[5] += (1 - scale) * centerY;
-
-(defn zoom [view-box scale matrix]
+(defn zoom [origin scale matrix]
   (let [scaled (mapv (partial * scale) matrix)
-        [center-x center-y ] (center view-box)
+        [center-x center-y ] origin
         scaled (-> scaled
                    (update 4 + (* (- 1 scale) center-x))
                    (update 5 + (* (- 1 scale) center-y)))]
@@ -49,37 +48,70 @@
          (partial pan dx dy)))
 
 (defn handle-zoom [scale]
-  (let [view-box (:view-box @app-state)]
-    (swap! app-state update :matrix (partial zoom view-box scale))))
+  (let [view-box (:view-box @app-state)
+        origin (center view-box)]
+    (swap! app-state update :matrix (partial zoom origin scale))))
 
-(defn start-panning [_]
-  (swap! app-state assoc :panning true))
+(defn start-panning [e]
+  (swap! app-state assoc :panning [(.-clientX e) (.-clientY e)]))
 
 (defn stop-panning [_]
-  (swap! app-state assoc :panning false))
+  (swap! app-state assoc :panning nil))
 
 (defn panning [e]
-  (if (:panning @app-state)
-    (let [svg (gdom/getElement "matrix-group")
-          ctm (.getScreenCTM svg)
-          view-box (:view-box @app-state)
-          offset-x (/ (- (.-pageX e) (.-e ctm)) (.-a ctm))
-          offset-y (/ (- (.-pageY e) (.-f ctm)) (.-d ctm))
-          view-box (:view-box @app-state)]
-      (js/console.log "panning" offset-x offset-y)
-      (swap! app-state update :matrix
-             (partial
-              pan (- offset-x (nth view-box 2)) (- offset-y (nth view-box 3)))))))
+  (if-let [[start-x start-y] (:panning @app-state)]
+    (let [client-x (.-clientX e)
+          client-y (.-clientY e)
+          bbox (.getBoundingClientRect (gdom/getElement "app"))]
+      (js/console.log "bbox" bbox)
+      (js/console.log "client-x" client-x "client-y" client-y)
+      (swap! app-state
+             (fn [s]
+               (let [x-world (.-width bbox)
+                     y-world (.-height bbox)
+                     [_ _ x-view y-view] (:view-box s)]
+                 (-> s
+                     (assoc :panning [client-x client-y])
+                     (update :matrix (partial pan
+                                              (* (- client-x start-x)
+                                                 (/ x-view x-world))
+                                              (* (- client-y start-y)
+                                                 (/ y-view x-world)))))))))))
+
+(defn handle-scroll [e]
+  (swap! app-state
+         (fn [s]
+           (let [bbox (.getBoundingClientRect (gdom/getElement "app"))
+                 [x-world y-world] (:world s)
+                 [_ _ x-view y-view] (:view-box s)
+                 client-x (.-clientX e)
+                 client-y (.-clientY e)
+                 zoom-step (if (< 0 (.-deltaY e)) 0.9 1.1)]
+             (console.log "foo" client-x client-y)
+             (assoc s :matrix (zoom [(* client-x
+                                        (/ x-view x-world))
+                                     (* client-y
+                                        (/ y-view x-world))]
+                               zoom-step  (:matrix s)))))))
+
+#_[(- client-x x-view)
+                                     (- client-y y-view)]
+
 
 (defn hello-world []
   [:div
-   {:on-mouse-move panning
+   {:id "world"
+    :on-mouse-move panning
     :on-mouse-down start-panning
     :on-mouse-up stop-panning
+    :on-wheel handle-scroll
+    :style #js{:border "1px solid black"
+               :overflow "hidden"}
     }
    [:h1 (:text @app-state)]
    [:h3 "Edit this in src/zoom/core.cljs and watch it lol"]
-   [:svg {:viewBox (str/join " "(:view-box @app-state))}
+   [:svg {:viewBox (str/join " "(:view-box @app-state))
+          :style #js {:border "1px solid red"}}
     [:g {:id "matrix-group"
          :transform (str "matrix(" (str/join " " (:matrix @app-state)) ")")}
      [:path {:id "WA" :class "territory" :d "m 38.3, 168.2 c -1.9,-0.6 -3.6,-1.1 -3.8,-1.3 -0.2,-0.2 0.8,-2.5 2.25,-5.2 1.4,-2.7 2.6,-5.5 2.6,-6.2 0,-0.8 -1.8,-4.25 -4,-7.7 -2.2,-3.5 -4,-7.1 -4,-8.1 l 0,-1.8 -6.4,-10.3 -6.4,-10.3 1.8,0 -7,-14.8 0.2,-7.3 c 0.1,-4 0.1,-8.9 0.1,-10.9 l -0.1,-3.5 5.5,-6 c 3,-3.3 5.5,-6.3 5.5,-6.7 0,-0.4 0.9,-0.8 1.9,-0.8 l 1.9,0 9.8,-6.1 13.8,-2.2 4.1,-2.6 8.4,-15 -1.2,-3 3.3,-5 1.8,1.1 4,-2.5 0,-3.1 4.6,-4.3 8.5,0 3.4,3.8 c 1.9,2.1 3.4,4.3 3.4,5 l 0,1.3 2.5,-0.6 L 97.5,33.2 c 0,38.3 0,77 0,113.8 l -4.6,1.6 -4.5,2.2 -2.3,5.6 -1.6,0.5 c -0.9,0.3 -4.8,1 -8.6,1.6 l -7,1.1 -8.2,4.9 -8.2,4.9 -5.3,0 c -2.9,0 -6.9,-0.5 -8.8,-1.1 z"}]
